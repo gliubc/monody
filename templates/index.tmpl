@@ -1,0 +1,218 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="renderer" content="webkit">
+    <meta http-equiv="Cache-Control" content="no-siteapp"/>
+    <title>{{ if .DBName }} {{ .DBName }} {{ else }} 数据库 {{ end }}</title>
+
+    <!--[if lt IE 9]>
+    <meta http-equiv="refresh" content="0;ie.html"/><![endif]-->
+
+    <link rel="shortcut icon" href="/assets/favicon.ico">
+    <link href="/assets/font-awesome/css/font-awesome.css" rel="stylesheet">
+    <link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/style.min.css" rel="stylesheet">
+    <style>
+        body.canvas-menu .navbar-static-side, body.fixed-sidebar .navbar-static-side {
+            width: 250px;
+        }
+        #page-wrapper {
+            margin: 0 0 0 250px
+        }
+        .nav-header {
+            padding: 0;
+        }
+        body.mini-navbar .search-element {
+            display: none;
+        }
+        body.canvas-menu .search-element {
+            display: block;
+        }
+        .search-element {
+            width: 100%;
+            height: 60px;
+            padding: 14px 10px 10px 10px;
+        }
+        .search-element input[type="text"] {
+            color: white;
+            border-top-left-radius: 2px;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom-left-radius: 2px;
+
+            box-shadow: none;
+            background-color: #374850;
+            border: 1px solid transparent;
+            border-right: 2px solid transparent;
+            height: 35px;
+        }
+        .search-element .btn {
+            color: #999;
+            border-top-left-radius: 0;
+            border-top-right-radius: 2px;
+            border-bottom-right-radius: 2px;
+            border-bottom-left-radius: 0;
+
+            box-shadow: none;
+            background-color: #374850;
+            border: 1px solid transparent;
+            height: 35px;
+        }
+        .navbar-header {
+            width: 100%;
+        }
+        .navbar-form-custom {
+            display: block;
+            float: none;
+            width: auto;
+            margin-left: 70px;
+            height: 60px;
+        }
+        .roll-right.J_tabRight {
+            right: 0px;
+        }
+    </style>
+</head>
+
+<body class="fixed-sidebar full-height-layout gray-bg" style="overflow:hidden">
+<div id="wrapper">
+    <!--左侧导航开始-->
+    <nav class="navbar-default navbar-static-side" role="navigation">
+        <div class="nav-close"><i class="fa fa-times-circle"></i>
+        </div>
+        <div class="sidebar-collapse">
+            <ul class="nav" id="side-menu">
+                <li class="nav-header">
+                    <div class="logo-element">H+
+                    </div>
+                    <div class="search-element">
+                        <div class="input-group">
+                            <input type="text" class="form-control" placeholder="✈">
+                            <span class="input-group-btn">
+                                <button class="btn btn-flat"><i class="fa fa-times-circle"></i>
+                                </button>
+                            </span>
+                        </div>
+                    </div>
+                </li>
+
+                <li>
+                    <a href="#">
+                        <i class="fa fa-list"></i> <span class="nav-label">{{ if .DBName }} {{ .DBName }} {{ else }} 数据表 {{ end }}</span> <span class="fa arrow"></span>
+                    </a>
+                    <ul class="nav nav-second-level">
+                        {{ range $index, $element := .Tables }}
+                            <li>
+                                <a class="J_menuItem"
+                                   href='{{ print "/data?dsn=" (urlquery $.DSN) "&tableName=" $element.Name }}'
+                                   title="{{ $element.Comment }}"
+                                   data-index="{{ $index }}">{{ $element.Name }}</a>
+                            </li>
+                        {{ end }}
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <!--左侧导航结束-->
+    <!--右侧部分开始-->
+    <div id="page-wrapper" class="gray-bg dashbard-1">
+        <div class="row border-bottom">
+            <nav class="navbar navbar-static-top" role="navigation" style="margin-bottom: 0">
+                <div class="navbar-header">
+                    <a class="navbar-minimalize minimalize-styl-2 btn btn-primary " href="#"><i class="fa fa-bars"></i>
+                    </a>
+                    <form role="search" class="navbar-form-custom" method="post" action="/">
+                        <div class="form-group">
+                            <input type="text" class="form-control"
+                                   placeholder="username:password@(127.0.0.1:3306)/database"
+                                   value="{{ .DSN }}" name="dsn">
+                        </div>
+                    </form>
+                </div>
+            </nav>
+        </div>
+        <div class="row content-tabs">
+            <button class="roll-nav roll-left J_tabLeft"><i class="fa fa-backward"></i>
+            </button>
+            <nav class="page-tabs J_menuTabs">
+                <div class="page-tabs-content">
+                    <a href="{{ print "/structure?dsn=" (urlquery .DSN) }}" class="active J_menuTab"
+                       data-id="{{ print "/structure?dsn=" (urlquery .DSN) }}">
+                        <strong>{{ if .DBName }} {{ .DBName }} {{ else }} 表结构 {{ end }}</strong>
+                    </a>
+                </div>
+            </nav>
+            <button class="roll-nav roll-right J_tabRight"><i class="fa fa-forward"></i>
+            </button>
+        </div>
+        <div class="row J_mainContent" id="content-main">
+            <iframe class="J_iframe" name="iframe0" width="100%" height="100%"
+                    src="{{ print "/structure?dsn=" (urlquery .DSN) }}"
+                    frameborder="0" data-id="{{ print "/structure?dsn=" (urlquery .DSN) }}" seamless></iframe>
+        </div>
+        <div class="footer">
+            <div class="pull-right">Holding on, memories never change
+                <a href="https://summernote.org/" target="_blank">summernote</a>
+            </div>
+        </div>
+    </div>
+    <!--右侧部分结束-->
+</div>
+<script src="/assets/jquery.min.js"></script>
+<script src="/assets/bootstrap/js/bootstrap.min.js"></script>
+<script src="/assets/jquery.metisMenu.js"></script>
+<script src="/assets/jquery.slimscroll.min.js"></script>
+<script src="/assets/layer.min.js"></script>
+<script src="/assets/hplus.min.js"></script>
+<script src="/assets/contabs.min.js"></script>
+<script src="/assets/pace.min.js"></script>
+<script>
+    $(function () {
+        $('.nav-second-level').prev().trigger('click');
+
+        $('.search-element input').on('keyup', function () {
+            filterMenu(this.value);
+        });
+        $('.search-element button').on('click', function () {
+            $('.search-element input').val('');
+            filterMenu('');
+        });
+
+        function filterMenu(keyword) {
+            $('.nav-second-level li a').each(function () {
+                var $this = $(this);
+
+                if (match(keyword, $this.text())) {
+                    $this.show();
+                } else {
+                    $this.hide();
+                }
+            });
+        }
+
+        function match(keyword, text) {
+            var i, index, chars;
+
+            keyword = keyword.trim().toLowerCase();
+            text = text.trim().toLowerCase();
+
+            chars = keyword.split('');
+            for (i in chars) {
+                index = text.indexOf(chars[i]);
+                if (index === -1) {
+                    return false;
+                }
+                text = text.substr(index + 1);
+            }
+            return true;
+        }
+    });
+</script>
+</body>
+
+</html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/bootstrap-table/bootstrap-table.min.css" rel="stylesheet">
+    <link href="/assets/toastr/toastr.min.css" rel="stylesheet">
+    <style>
+        .fixed-table-toolbar .search {
+            float: none!important;
+            padding-top: 10px;
+            margin-right: 140px;
+        }
+        .fixed-table-toolbar .dropdown-menu {
+            min-width: 300px;
+            max-height: 600px;
+        }
+        .fixed-table-container tbody .selected td {
+            background-color: #fcf8e3;
+        }
+    </style>
+
+    <title>{{ if .DBName }} {{ .DBName }} {{ else }} 表结构 {{ end }}</title>
+
+</head>
+
+<body>
+
+<div class="container-fluid">
+    <table id="table" class="table-bordered table-condensed"></table>
+</div>
+
+<script src="/assets/jquery.min.js"></script>
+<script src="/assets/bootstrap/js/bootstrap.min.js"></script>
+<script src="/assets/bootstrap-table/bootstrap-table.js"></script>
+<script src="/assets/bootstrap-table/locale/bootstrap-table-zh-CN.min.js"></script>
+<script src="/assets/bootstrap3-typeahead/bootstrap3-typeahead.js"></script>
+<script src="/assets/moment/moment.min.js"></script>
+<script src="/assets/moment/locale/zh-cn.js"></script>
+<script src="/assets/toastr/toastr.js"></script>
+<script src="/assets/sweetalert/sweetalert.min.js"></script>
+<script>
+    $.extend($.fn.bootstrapTable.defaults, {
+        striped: true,
+        undefinedText: '-',
+        clickToSelect: false,
+        cache: true,
+        sortable: true,
+        pagination: true,
+        pageList: [1, 5, 10, 20, 100, 1000, 10000],
+        sidePagination: 'server',
+        search: true,
+        searchOnEnterKey: true,
+        searchTimeOut: 0,
+        trimOnSearch: true,
+        showRefresh: true,
+        showToggle: true,
+        showColumns: true,
+        smartDisplay: false,
+        iconSize: "outline",
+        icons: {
+            refresh: "glyphicon-repeat",
+            toggle: "glyphicon-list-alt",
+            columns: "glyphicon-list"
+        }
+    });
+    $.extend($.fn.bootstrapTable.columnDefaults, {
+        sortable: true
+    });
+
+    toastr.options = {
+        "closeButton": false,
+        "debug": false,
+        "newestOnTop": false,
+        "progressBar": false,
+        "positionClass": "toast-top-center",
+        "preventDuplicates": false,
+        "onclick": null,
+        "showDuration": "300",
+        "hideDuration": "1000",
+        "timeOut": "5000",
+        "extendedTimeOut": "1000",
+        "showEasing": "swing",
+        "hideEasing": "linear",
+        "showMethod": "fadeIn",
+        "hideMethod": "fadeOut"
+    };
+
+    function match(keyword, text) {
+        var i, index, chars;
+
+        keyword = keyword.trim().toLowerCase();
+        text = text.trim().toLowerCase();
+
+        chars = keyword.split('');
+        for (i in chars) {
+            index = text.indexOf(chars[i]);
+            if (index === -1) {
+                return false;
+            }
+            text = text.substr(index + 1);
+        }
+        return true;
+    }
+</script>
+
+<script>
+    $.fn.bootstrapTable.Constructor.prototype.initSearch = function () {
+        "use strict";
+
+        var that = this, texts;
+
+        if (!this.searchText) {
+            this.data = this.options.data;
+            this.initSort();
+            return;
+        }
+
+        texts = this.searchText.replace(/\t/g, ' ').split(' ').filter(function (text) {
+            return text !== '';
+        }).map(function (text) {
+            return text.toLowerCase();
+        });
+
+        this.data = this.options.data.filter(function (item, index) {
+            var i;
+
+            for (i in texts) {
+                if ((item.table_name + '').toLowerCase() === texts[i]) {
+                    return true;
+                }
+            }
+            return false;
+        });
+        this.initSort();
+    };
+</script>
+<script>
+    $(function () {
+        "use strict";
+
+        var $table = $('#table');
+
+        $table.bootstrapTable({
+            url: "{{ print "/getStructure?dsn=" (urlquery .DSN) }}",
+            method: 'get',
+            columns: [
+                {
+                    checkbox: true, sortable: false,
+                },
+                {
+                    field: 'table_name', title: '表名（注释）',
+                    events: {
+                        'click span': function (e, value, row, index) {
+                            e.stopPropagation();
+                        }
+                    },
+                    formatter: function (value, row, index) {
+                        return '<span><b>' + value + '</b>'
+                            + (row.table_comment ? ('（' + row.table_comment + '）') : '') + '</span>';
+                    }
+                },
+                {
+                    field: 'fields', title: '列名（注释）',
+                    events: {
+                        'click span': function (e, value, row, index) {
+                            e.stopPropagation();
+                        }
+                    },
+                    formatter: function (value, row, index) {
+                        var html = '<span>', prop;
+                        for (prop in value) {
+                            html += '<b>' + prop + '</b>' + (value[prop] ? ('（' + value[prop] + '）') : '') + '<br>';
+                        }
+                        html += '</span>';
+                        return html;
+                    }
+                }
+            ],
+            sidePagination: 'client',
+            searchOnEnterKey: false,
+            searchTimeOut: 0,
+            trimOnSearch: false,
+        });
+        $table.on('post-body.bs.table', function () {
+            var $bootstrapTable = $table.data('bootstrap.table');
+            var $input = $bootstrapTable.$toolbar.find('.search input');
+            var $typeahead = null;
+
+            $input.typeahead({
+                source: $bootstrapTable.options.data.map(function (t) {
+                    return t.table_name + (t.table_comment ? ('（' + t.table_comment + '）') : '');
+                }),
+                items: 'all',
+                minLength: 1,
+                showHintOnFocus: 'all',
+                displayText: function (item) {
+                    if (!$typeahead) $typeahead = this;
+                    return item;
+                },
+                matcher: function (item) {
+                    if (this.query.slice(-1) === ' ') {
+                        return true;
+                    }
+                    var words = this.query.replace(/\t/g, ' ').split(' ').filter(function (text) {
+                        return text !== '';
+                    });
+                    var lastWord = words.length ? words[words.length - 1] : '';
+
+                    var index = item.indexOf('（');
+                    if (index !== -1) {
+                        item = item.substr(0, index);
+                    }
+                    return match(lastWord, item);
+                },
+                updater: function (item) {
+                    var inputValue = $input.val();
+
+                    if (inputValue.slice(-1) !== ' ') {
+                        var lastIndex = inputValue.lastIndexOf(" ");
+                        inputValue = inputValue.substring(0, (~lastIndex) ? lastIndex + 1 : 0);
+                    }
+
+                    var index = item.indexOf('（');
+
+                    return inputValue + (index === -1 ? item : item.substring(0, index));
+                },
+                afterSelect: function (item) {
+                    $bootstrapTable.onSearch({currentTarget: $input});
+                }
+            });
+
+            $input.on('click', function (e) {
+                e.stopPropagation();
+
+                if ($typeahead) {
+                    if ($typeahead.shown) {
+                        $typeahead.lookup('');
+                    } else {
+                        $typeahead.lookup();
+                    }
+                }
+            }).off('blur');
+
+            $(document).on('click', function () {
+                if ($typeahead) {
+                    $typeahead.hide();
+                }
+            });
+        });
+    });
+</script>
+
+</body>
+</html>

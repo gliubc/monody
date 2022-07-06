@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/assets/bootstrap-table/bootstrap-table.min.css" rel="stylesheet">
+    <link href="/assets/toastr/toastr.min.css" rel="stylesheet">
+    <style>
+        .fixed-table-toolbar .search {
+            float: none!important;
+            padding-top: 10px;
+            margin-right: 140px;
+        }
+        .fixed-table-toolbar .dropdown-menu {
+            min-width: 300px;
+            max-height: 600px;
+        }
+        .fixed-table-container tbody .selected td {
+            background-color: #fcf8e3;
+        }
+    </style>
+
+    <title>{{.TableName}}</title>
+    {{ if .PK }}
+    <style>
+        .fixed-table-toolbar .search {
+            margin-left: 128px;
+        }
+        .fixed-table-toolbar .bs-bars {
+            margin-top: 9px;
+        }
+    </style>
+    {{ end }}
+
+</head>
+
+<body>
+
+<div class="container-fluid">
+    <div id="toolbar" class="btn-group">
+        {{ if .PK }}
+        <button id="add" class="btn btn-default" title="添加" disabled>
+            <i class="glyphicon glyphicon-plus"></i>
+        </button>
+        <button id="clone" class="btn btn-default" title="克隆" disabled>
+            <i class="glyphicon glyphicon-asterisk"></i>
+        </button>
+        <button id="delete" class="btn btn-default" title="删除" disabled>
+            <i class="glyphicon glyphicon-minus"></i>
+        </button>
+        {{ end }}
+    </div>
+    <table id="table" class="table-bordered table-condensed"></table>
+</div>
+
+<script src="/assets/jquery.min.js"></script>
+<script src="/assets/bootstrap/js/bootstrap.min.js"></script>
+<script src="/assets/bootstrap-table/bootstrap-table.js"></script>
+<script src="/assets/bootstrap-table/locale/bootstrap-table-zh-CN.min.js"></script>
+<script src="/assets/bootstrap3-typeahead/bootstrap3-typeahead.js"></script>
+<script src="/assets/moment/moment.min.js"></script>
+<script src="/assets/moment/locale/zh-cn.js"></script>
+<script src="/assets/toastr/toastr.js"></script>
+<script src="/assets/sweetalert/sweetalert.min.js"></script>
+<script>
+    $.extend($.fn.bootstrapTable.defaults, {
+        striped: true,
+        undefinedText: '-',
+        clickToSelect: false,
+        cache: true,
+        sortable: true,
+        pagination: true,
+        pageList: [1, 5, 10, 20, 100, 1000, 10000],
+        sidePagination: 'server',
+        search: true,
+        searchOnEnterKey: true,
+        searchTimeOut: 0,
+        trimOnSearch: true,
+        showRefresh: true,
+        showToggle: true,
+        showColumns: true,
+        smartDisplay: false,
+        iconSize: "outline",
+        icons: {
+            refresh: "glyphicon-repeat",
+            toggle: "glyphicon-list-alt",
+            columns: "glyphicon-list"
+        }
+    });
+    $.extend($.fn.bootstrapTable.columnDefaults, {
+        sortable: true
+    });
+
+    toastr.options = {
+        "closeButton": false,
+        "debug": false,
+        "newestOnTop": false,
+        "progressBar": false,
+        "positionClass": "toast-top-center",
+        "preventDuplicates": false,
+        "onclick": null,
+        "showDuration": "300",
+        "hideDuration": "1000",
+        "timeOut": "5000",
+        "extendedTimeOut": "1000",
+        "showEasing": "swing",
+        "hideEasing": "linear",
+        "showMethod": "fadeIn",
+        "hideMethod": "fadeOut"
+    };
+
+    function match(keyword, text) {
+        var i, index, chars;
+
+        keyword = keyword.trim().toLowerCase();
+        text = text.trim().toLowerCase();
+
+        chars = keyword.split('');
+        for (i in chars) {
+            index = text.indexOf(chars[i]);
+            if (index === -1) {
+                return false;
+            }
+            text = text.substr(index + 1);
+        }
+        return true;
+    }
+</script>
+
+<script>
+    var dbColumns, pk, columns, $table, $bootstrapTable, $input, $typeahead, $addBtn, $cloneBtn, $deleteBtn;
+
+    $(function () {
+        "use strict";
+
+        dbColumns = {{ .Columns }};
+        pk = '{{ .PK }}';
+        columns = [];
+        $table = $('#table');
+        $addBtn = $('#add');
+        $cloneBtn = $('#clone');
+        $deleteBtn = $('#delete');
+
+        columns.push({
+            checkbox: true, sortable: false
+        });
+
+        for (var i in dbColumns) {
+            var field = dbColumns[i].field,
+                comment = dbColumns[i].comment;
+            columns.push({
+                field: field,
+                title: field + (comment ? ('（' + comment + '）') : ''),
+                minWidth: 102,
+                events: {
+                    'click input': function (e, value, row, index) {
+                        e.stopPropagation();
+                    },
+                    'keyup input': function (e, value, row, index) {
+                        if (pk) {
+                            switch (e.keyCode) {
+                                case 13:
+                                    confirmEdit(e, value, row, index);
+                                    break;
+                                case 27:
+                                    cancelEdit(e, value, row, index);
+                                    break;
+                            }
+                        }
+                    },
+                    'click span': function (e, value, row, index) {
+                        e.stopPropagation();
+                    },
+                    'dblclick span': function (e, value, row, index) {
+                        if (pk) {
+                            edit(e, value, row, index);
+                        }
+                    }
+                },
+                formatter: function (value, row, index) {
+                    var html;
+
+                    html = '<span>';
+                    if (typeof value === 'string'
+                        && (value.length === 10 || value.length === 13)
+                        && $.isNumeric(value)
+                        && value.indexOf('.') === -1) {
+
+                        html += value + ' <i>' + moment(value.length === 10 ? value * 1000 : value * 1).fromNow()
+                            + '</i>';
+                    } else if (value === null) {
+                        html += '<i>null</i>';
+                    } else if (strWidth(value) > 80) {
+                        html += '<i>' + truncateStr(value, 80) + '…</i>';
+                    } else {
+                        html += value;
+                    }
+                    html += '</span>';
+
+                    if (pk) {
+                        html += '<input type="text" class="form-control input-sm" style="display: none;" '
+                            + ' data-field="' + this.field + '" value="' + (value === null ? '' : value)
+                            + '" ' + (this.field === pk ? 'readonly' : '') + ' >';
+                    }
+
+                    return html;
+                }
+            });
+        }
+
+        $table.bootstrapTable({
+            url: "{{ print "/getData?dsn=" (urlquery $.DSN) "&tableName=" .TableName }}",
+            method: 'get',
+            toolbar: '#toolbar',
+            columns: columns,
+            searchOnEnterKey: false,
+            searchTimeOut: 500,
+            trimOnSearch: false,
+            onToggle: updateButtonStatus,
+            onCheck: updateButtonStatus,
+            onUncheck: updateButtonStatus,
+            onCheckAll: updateButtonStatus,
+            onUncheckAll: updateButtonStatus,
+            onPostBody: updateButtonStatus,
+        });
+
+        $addBtn.on('click', add);
+        $cloneBtn.on('click', clone);
+        $deleteBtn.on('click', del);
+
+        $table.on('keyup', '.addable input', function (e) {
+            switch (e.keyCode) {
+                case 13:
+                    confirmAdd();
+                    break;
+                case 27:
+                    cancelAdd();
+                    break;
+            }
+        });
+
+        $bootstrapTable = $table.data('bootstrap.table');
+        $input = $bootstrapTable.$toolbar.find('.search input');
+
+        $input.typeahead({
+            source: $bootstrapTable.columns
+                .filter(function (t) { return !$.isNumeric(t.field); })
+                .map(function (t) { return t.title; }),
+            items: 'all',
+            minLength: 0,
+            showHintOnFocus: 'all',
+            displayText: function (item) {
+                if (!$typeahead) $typeahead = this;
+                return item;
+            },
+            matcher: function (item) {
+                if (this.query.slice(-1) === ' ') {
+                    return true;
+                }
+                var words = this.query.replace(/\t/g, ' ').split(' ').filter(function (text) {
+                    return text !== '';
+                });
+                var lastWord = words.length ? words[words.length - 1] : '';
+
+                var index = item.indexOf('（');
+                if (index !== -1) {
+                    item = item.substr(0, index);
+                }
+                return match(lastWord, item);
+            },
+            updater: function (item) {
+                var inputValue = $input.val();
+
+                if (inputValue.slice(-1) !== ' ') {
+                    var lastIndex = inputValue.lastIndexOf(" ");
+                    inputValue = inputValue.substring(0, (~lastIndex) ? lastIndex + 1 : 0);
+                }
+
+                var index = item.indexOf('（');
+
+                return inputValue + (index === -1 ? item : item.substring(0, index));
+            },
+            afterSelect: function (item) {
+            }
+        });
+
+        $input.on('click', function (e) {
+            e.stopPropagation();
+
+            if ($typeahead) {
+                if ($typeahead.shown) {
+                    $typeahead.lookup('');
+                } else {
+                    $typeahead.lookup();
+                }
+            }
+        }).off('blur');
+
+        $(document).on('click', function () {
+            if ($typeahead) {
+                $typeahead.hide();
+            }
+        });
+    });
+
+    function add() {
+        var $row, widths = [], visibleColumns;
+
+        $table.find('thead th').each(function () {
+            widths.push($(this).css('width'));
+        });
+
+        $row = $('<tr class="addable"></tr>').append([
+            '<td class="bs-checkbox ">',
+            '   <input type="checkbox" disabled>',
+            '</td>',
+        ].join(''));
+
+        visibleColumns = $table.bootstrapTable('getVisibleColumns');
+        visibleColumns.forEach(function (column) {
+            if ($.isNumeric(column.field)) {
+                return;
+            }
+            $row.append(
+                '<td><input type="text" class="form-control input-sm" data-field="' + column.field + '" '
+                + (column.field === pk ? 'readonly' : '') + ' ></td>'
+            );
+        });
+
+        $table.children('tbody').append($row);
+        $table.find('tr.addable td').each(function (i) {
+            $(this).css('min-width', widths[i]);
+        });
+        $table.find('tr.addable input:not(:disabled):not([readonly])').eq(0).focus();
+
+        updateButtonStatus();
+    }
+
+    function cancelAdd() {
+        $table.find('tr.addable').remove();
+        updateButtonStatus();
+    }
+
+    function confirmAdd() {
+        var $inputs, data = {};
+
+        $inputs = $table.find('tr.addable input');
+        $inputs.each(function (i, ele) {
+            var $ele = $(ele),
+                field = $ele.data('field'),
+                value = $ele.val();
+
+            if (!field) {
+                return;
+            }
+            if (value === '') {
+                return;
+            }
+            data[field] = value;
+        });
+        if (Object.keys(data).length === 0) {
+            cancelAdd();
+            return;
+        }
+
+        $.post("{{ print "/add?dsn=" (urlquery $.DSN) "&tableName=" .TableName }}", data,
+            function (result) {
+                if (result.code != 0) {
+                    swal({ icon: "error", title: result.msg, text: result.data });
+                } else {
+                    toastr.success(result.msg);
+                    $table.bootstrapTable('refresh');
+                }
+            });
+    }
+
+    function edit(e, value, row, index) {
+        e.stopPropagation();
+
+        $table.find('tr.editable').each(function () {
+            toggleEdit($(this).data('index'));
+        });
+
+        $table.find('tr[data-index=' + index + '] input').each(function () {
+            var $input = $(this),
+                field = $input.data('field');
+
+            if (!field) return;
+            $input.val(row[field]);
+        });
+        toggleEdit(index);
+        $(e.target).siblings('input').focus();
+
+        updateButtonStatus();
+    }
+
+    function cancelEdit(e, value, row, index) {
+        e.stopPropagation();
+        toggleEdit(index);
+        updateButtonStatus();
+    }
+
+    function toggleEdit(index) {
+        var $tr, $tds, widths = [];
+
+        $table.find('thead th').each(function () {
+            widths.push($(this).css('width'));
+        });
+
+        $tr = $table.find('tr[data-index=' + index + ']');
+        $tds = $tr.children('td');
+
+        if ($tr.hasClass('editable')) {
+            $tr.removeClass('editable');
+        } else {
+            $tr.addClass('editable');
+        }
+        $tds.each(function (i, ele) {
+            var $ele = $(ele);
+
+            if (i === 0) {
+                // pass
+            } else {
+                $ele.children('span').toggle();
+                $ele.children('input').toggle();
+            }
+
+            $(this).css('min-width', widths[i]);
+        });
+    }
+
+    function confirmEdit(e, value, row, index) {
+        var $tr, $inputs, data = {};
+
+        e.stopPropagation();
+
+        $tr = $(e.target).parents('tr');
+        $inputs = $tr.find('input');
+
+        $inputs.each(function (i, ele) {
+            var $ele = $(ele),
+                field = $ele.data('field'),
+                value = $ele.val();
+
+            if (!field) {
+                return;
+            }
+            if (row[field] === value) {
+                return;
+            }
+            if (row[field] === null && value === '') {
+                return;
+            }
+            data[field] = value;
+        });
+        if (Object.keys(data).length === 0) {
+            cancelEdit(e, value, row, index);
+            return;
+        }
+        data[pk] = row[pk];
+
+        $.post("{{ print "/edit?dsn=" (urlquery $.DSN) "&tableName=" .TableName }}", data,
+            function (result) {
+                if (result.code != 0) {
+                    swal({ icon: "error", title: result.msg, text: result.data });
+                } else {
+                    toastr.success(result.msg);
+                    $table.bootstrapTable('refresh');
+                }
+            });
+    }
+
+    function clone() {
+        var ids = [], title;
+
+        ids = $table.bootstrapTable('getSelections').map(function (row) {
+            return row[pk];
+        });
+        title = "克隆选中的 " + ids.length + " 条数据吗？";
+        swal({
+            title: title,
+            icon: "warning",
+            buttons: { cancel: { text: '不', visible: true }, confirm: { text: '好' } },
+        }).then(function (willDo) {
+            if (willDo) {
+                $.post("{{ print "/clone?dsn=" (urlquery $.DSN) "&tableName=" .TableName }}",
+                    {ids: ids.join(',')},
+                    function (result) {
+                        if (result.code != 0) {
+                            swal({ icon: "error", title: result.msg, text: result.data });
+                        } else {
+                            toastr.success(result.msg);
+                            $table.bootstrapTable('refresh');
+                        }
+                    });
+            }
+        });
+    }
+
+    function del() {
+        var ids = [], title;
+
+        ids = $table.bootstrapTable('getSelections').map(function (row) {
+            return row[pk];
+        });
+        title = "删除选中的 " + ids.length + " 条数据吗？";
+        swal({
+            title: title,
+            icon: "warning",
+            buttons: { cancel: { text: '不', visible: true }, confirm: { text: '好' } },
+        }).then(function (willDo) {
+            if (willDo) {
+                $.post("{{ print "/del?dsn=" (urlquery $.DSN) "&tableName=" .TableName }}",
+                    {ids: ids.join(',')},
+                    function (result) {
+                        if (result.code != 0) {
+                            swal({ icon: "error", title: result.msg, text: result.data });
+                        } else {
+                            toastr.success(result.msg);
+                            $table.bootstrapTable('refresh');
+                        }
+                    });
+            }
+        });
+    }
+
+    function updateButtonStatus() {
+        var cardView = $bootstrapTable ? ($bootstrapTable.options.cardView) : false,
+            addableLength = $table.find('tr.addable').length,
+            editableLength = $table.find('tr.editable').length,
+            selectionsLength = $table.bootstrapTable('getSelections').length,
+
+            addBtnStatus = !cardView && !addableLength,
+            cloneBtnStatus = selectionsLength,
+            deleteBtnStatus = cloneBtnStatus;
+
+        $addBtn.prop('disabled', !addBtnStatus);
+        $cloneBtn.prop('disabled', !cloneBtnStatus);
+        $deleteBtn.prop('disabled', !deleteBtnStatus);
+    }
+
+    function strWidth(str) {
+        var width = str.length;
+
+        for (var i = 0; i < str.length; i++) {
+            var code = str.charCodeAt(i);
+
+            if (code > 0x7F) width += 1;
+            if (code >= 0xDC00 && code <= 0xDFFF) i++;  // trail surrogate
+        }
+
+        return width;
+    }
+
+    function  truncateStr(str, width) {
+        var w = 0, s = '';
+
+        for (var i = 0; i < str.length; i++) {
+            var code = str.charCodeAt(i);
+
+            w++;
+            if (code > 0x7F) w += 1;
+            if (code >= 0xDC00 && code <= 0xDFFF) i++;  // trail surrogate
+            if (w > width) break;
+            s += str[i];
+        }
+
+        return s;
+    }
+</script>
+
+</body>
+</html>
