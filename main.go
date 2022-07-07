@@ -2,7 +2,10 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
@@ -108,6 +111,17 @@ func getColumns(dsn string, tableName string) (columns []*Column, err error) {
 	return
 }
 
+func getPK(columns []*Column) (pk string, err error) {
+	for _, column := range columns {
+		if column.Key == "PRI" {
+			pk = column.Name
+			return
+		}
+	}
+	err = fmt.Errorf("no primary key")
+	return
+}
+
 func getData(dsn string, tableName string, search string, sort string, order string, offset string, limit string) (total int, data []map[string]any, err error) {
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -177,6 +191,116 @@ func getData(dsn string, tableName string, search string, sort string, order str
 		}
 		data = append(data, entry)
 	}
+
+	return
+}
+
+func add(dsn string, tableName string, postForm url.Values) (err error) {
+	var fields, values []string
+	for field := range postForm {
+		fields = append(fields, field)
+		values = append(values, postForm.Get(field))
+	}
+
+	query := "insert into " + tableName + " (" +
+		strings.Join(fields, ", ") + ") values ('" + strings.Join(values, "', '") + "')"
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+
+	_, err = db.Exec(query)
+
+	return
+}
+
+func edit(dsn string, tableName string, postForm url.Values) (err error) {
+	columns, err := getColumns(dsn, tableName)
+	if err != nil {
+		return
+	}
+
+	pk, err := getPK(columns)
+	if err != nil {
+		return
+	}
+
+	var pkValue string
+	var fieldValues []string
+	for field := range postForm {
+		if field == pk {
+			pkValue = postForm.Get(field)
+		} else {
+			fieldValues = append(fieldValues, field+" = '"+postForm.Get(field)+"'")
+		}
+	}
+
+	query := "update " + tableName + " set " + strings.Join(fieldValues, ", ") + " where " + pk + " = " + pkValue
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+
+	_, err = db.Exec(query)
+
+	return
+}
+
+func clone(dsn string, tableName string, ids string) (err error) {
+	columns, err := getColumns(dsn, tableName)
+	if err != nil {
+		return
+	}
+
+	pk, err := getPK(columns)
+	if err != nil {
+		return
+	}
+
+	var fields []string
+	for _, column := range columns {
+		if pk != column.Name {
+			fields = append(fields, column.Name)
+		}
+	}
+
+	query := "insert into " + tableName + " (" + strings.Join(fields, ", ") + ") select " + strings.Join(fields, ", ") + " from " + tableName + " where " + pk + " in (" + ids + ")"
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+
+	_, err = db.Exec(query)
+
+	return
+}
+
+func del(dsn string, tableName string, ids string) (err error) {
+	columns, err := getColumns(dsn, tableName)
+	if err != nil {
+		return
+	}
+
+	pk, err := getPK(columns)
+	if err != nil {
+		return
+	}
+
+	query := "delete from " + tableName + " where " + pk + " in (" + ids + ")"
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+
+	_, err = db.Exec(query)
 
 	return
 }
@@ -265,10 +389,9 @@ func main() {
 		}
 		data.Columns = columns
 
-		for _, column := range columns {
-			if column.Key == "PRI" {
-				data.PK = column.Name
-			}
+		pk, err := getPK(columns)
+		if err == nil {
+			data.PK = pk
 		}
 
 		c.HTML(http.StatusOK, "data.tmpl", data)
@@ -297,23 +420,63 @@ func main() {
 	})
 
 	r.POST("/add", func(c *gin.Context) {
-		result := map[string]any{"code": 0, "msg": "添加成功", "data": nil}
-		c.JSON(http.StatusOK, result)
+		dsn := c.Query("dsn")
+		tableName := c.Query("tableName")
+		c.MultipartForm()
+
+		err := add(dsn, tableName, c.Request.PostForm)
+		if err != nil {
+			result := map[string]any{"code": 1, "msg": "添加失败", "data": err.Error()}
+			c.JSON(http.StatusOK, result)
+		} else {
+			result := map[string]any{"code": 0, "msg": "添加成功", "data": nil}
+			c.JSON(http.StatusOK, result)
+		}
 	})
 
 	r.POST("/edit", func(c *gin.Context) {
-		result := map[string]any{"code": 0, "msg": "编辑成功", "data": nil}
-		c.JSON(http.StatusOK, result)
+		dsn := c.Query("dsn")
+		tableName := c.Query("tableName")
+		c.MultipartForm()
+
+		err := edit(dsn, tableName, c.Request.PostForm)
+		if err != nil {
+			result := map[string]any{"code": 1, "msg": "编辑失败", "data": err.Error()}
+			c.JSON(http.StatusOK, result)
+		} else {
+			result := map[string]any{"code": 0, "msg": "编辑成功", "data": nil}
+			c.JSON(http.StatusOK, result)
+		}
 	})
 
 	r.POST("/clone", func(c *gin.Context) {
-		result := map[string]any{"code": 0, "msg": "克隆成功", "data": nil}
-		c.JSON(http.StatusOK, result)
+		dsn := c.Query("dsn")
+		tableName := c.Query("tableName")
+		ids := c.PostForm("ids")
+
+		err := clone(dsn, tableName, ids)
+		if err != nil {
+			result := map[string]any{"code": 1, "msg": "克隆失败", "data": err.Error()}
+			c.JSON(http.StatusOK, result)
+		} else {
+			result := map[string]any{"code": 0, "msg": "克隆成功", "data": nil}
+			c.JSON(http.StatusOK, result)
+		}
 	})
 
 	r.POST("/del", func(c *gin.Context) {
-		result := map[string]any{"code": 0, "msg": "删除成功", "data": nil}
-		c.JSON(http.StatusOK, result)
+		dsn := c.Query("dsn")
+		tableName := c.Query("tableName")
+		ids := c.PostForm("ids")
+
+		err := del(dsn, tableName, ids)
+		if err != nil {
+			result := map[string]any{"code": 1, "msg": "删除失败", "data": err.Error()}
+			c.JSON(http.StatusOK, result)
+		} else {
+			result := map[string]any{"code": 0, "msg": "删除成功", "data": nil}
+			c.JSON(http.StatusOK, result)
+		}
 	})
 
 	r.Run(":8080")
